@@ -9,9 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"github.com/vsergeev/btckeygenie/btckey"
 	"log"
 	"os"
+
+	"github.com/vsergeev/btckeygenie/btckey"
 )
 
 func byteString(b []byte) (s string) {
@@ -37,7 +38,15 @@ func main() {
 	}
 
 	/* Import WIF from first argument */
-	if len(os.Args) > 1 {
+	if len(os.Args) > 1 && (os.Args[1] == "--testnet" || os.Args[1] == "-t") {
+		/* Set networkType as testnet */
+		btckey.NetworkType = "testnet"
+		/* Generate a new Bitcoin keypair */
+		priv, err = btckey.GenerateKey(rand.Reader)
+		if err != nil {
+			log.Fatalf("Generating keypair: %s\n", err)
+		}
+	} else if len(os.Args) > 1 {
 		err = priv.FromWIF(os.Args[1])
 		if err != nil {
 			log.Fatalf("Importing WIF: %s\n", err)

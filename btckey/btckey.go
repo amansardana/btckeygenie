@@ -7,12 +7,13 @@ package btckey
 
 import (
 	"bytes"
-	"golang.org/x/crypto/ripemd160"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"math/big"
 	"strings"
+
+	"golang.org/x/crypto/ripemd160"
 )
 
 /******************************************************************************/
@@ -20,6 +21,7 @@ import (
 /******************************************************************************/
 
 var secp256k1 EllipticCurve
+var NetworkType string
 
 func init() {
 	/* See Certicom's SEC2 2.7.1, pg.15 */
@@ -31,6 +33,8 @@ func init() {
 	secp256k1.G.Y, _ = new(big.Int).SetString("483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8", 16)
 	secp256k1.N, _ = new(big.Int).SetString("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16)
 	secp256k1.H, _ = new(big.Int).SetString("01", 16)
+
+	NetworkType = "livenet"
 }
 
 // PublicKey represents a Bitcoin public key.
@@ -200,7 +204,11 @@ func b58checkdecode(s string) (ver uint8, b []byte, err error) {
 		if s[i] != '1' {
 			break
 		}
-		b = append([]byte{0x00}, b...)
+		if NetworkType == "testnet" {
+			b = append([]byte{0x6F}, b...)
+		} else {
+			b = append([]byte{0x00}, b...)
+		}
 	}
 
 	/* Verify checksum */
@@ -250,8 +258,10 @@ func CheckWIF(wif string) (valid bool, err error) {
 		return false, err
 	}
 
-	/* Check that the version byte is 0x80 */
-	if ver != 0x80 {
+	/* Check that the version byte is 0xEF */
+	if NetworkType == "testnet" && ver != 0xEF {
+		return false, fmt.Errorf("Invalid WIF version 0x%02x, expected 0xEF.", ver)
+	} else if ver != 0x80 {
 		return false, fmt.Errorf("Invalid WIF version 0x%02x, expected 0x80.", ver)
 	}
 
@@ -271,11 +281,17 @@ func CheckWIF(wif string) (valid bool, err error) {
 // ToBytes converts a Bitcoin private key to a 32-byte byte slice.
 func (priv *PrivateKey) ToBytes() (b []byte) {
 	d := priv.D.Bytes()
-
+	var paddedD []byte
 	/* Pad D to 32 bytes */
-	padded_d := append(bytes.Repeat([]byte{0x00}, 32-len(d)), d...)
+	if NetworkType == "testnet" {
+		paddedD = append(bytes.Repeat([]byte{0x6F}, 32-len(d)), d...)
 
-	return padded_d
+	} else {
+		paddedD = append(bytes.Repeat([]byte{0x00}, 32-len(d)), d...)
+
+	}
+
+	return paddedD
 }
 
 // FromBytes converts a 32-byte byte slice to a Bitcoin private key and derives the corresponding Bitcoin public key.
@@ -299,8 +315,12 @@ func (priv *PrivateKey) ToWIF() (wif string) {
 	/* Convert the private key to bytes */
 	priv_bytes := priv.ToBytes()
 
-	/* Convert bytes to base-58 check encoded string with version 0x80 */
-	wif = b58checkencode(0x80, priv_bytes)
+	/* Convert bytes to base-58 check encoded string with version 0xEF */
+	if NetworkType == "testnet" {
+		wif = b58checkencode(0xEF, priv_bytes)
+	} else {
+		wif = b58checkencode(0x80, priv_bytes)
+	}
 
 	return wif
 }
@@ -315,8 +335,13 @@ func (priv *PrivateKey) ToWIFC() (wifc string) {
 	/* Append 0x01 to tell Bitcoin wallet to use compressed public keys */
 	priv_bytes = append(priv_bytes, []byte{0x01}...)
 
-	/* Convert bytes to base-58 check encoded string with version 0x80 */
-	wifc = b58checkencode(0x80, priv_bytes)
+	/* Convert bytes to base-58 check encoded string with version 0xEF */
+	if NetworkType == "testnet" {
+		wifc = b58checkencode(0xEF, priv_bytes)
+	} else {
+		wifc = b58checkencode(0x80, priv_bytes)
+	}
+	// wifc = b58checkencode(0xEF, priv_bytes)
 
 	return wifc
 }
@@ -331,8 +356,13 @@ func (priv *PrivateKey) FromWIF(wif string) (err error) {
 		return err
 	}
 
-	/* Check that the version byte is 0x80 */
-	if ver != 0x80 {
+	/* Check that the version byte is 0xEF */
+	// if ver != 0xEF {
+	// 	return fmt.Errorf("Invalid WIF version 0x%02x, expected 0xEF.", ver)
+	// }
+	if NetworkType == "testnet" && ver != 0xEF {
+		return fmt.Errorf("Invalid WIF version 0x%02x, expected 0xEF.", ver)
+	} else if ver != 0x80 {
 		return fmt.Errorf("Invalid WIF version 0x%02x, expected 0x80.", ver)
 	}
 
@@ -365,16 +395,21 @@ func (pub *PublicKey) ToBytes() (b []byte) {
 	/* See Certicom SEC1 2.3.3, pg. 10 */
 
 	x := pub.X.Bytes()
-
+	var paddedX []byte
 	/* Pad X to 32-bytes */
-	padded_x := append(bytes.Repeat([]byte{0x00}, 32-len(x)), x...)
+	if NetworkType == "testnet" {
+		paddedX = append(bytes.Repeat([]byte{0x6F}, 32-len(x)), x...)
+
+	} else {
+		paddedX = append(bytes.Repeat([]byte{0x6F}, 32-len(x)), x...)
+	}
 
 	/* Add prefix 0x02 or 0x03 depending on ylsb */
 	if pub.Y.Bit(0) == 0 {
-		return append([]byte{0x02}, padded_x...)
+		return append([]byte{0x02}, paddedX...)
 	}
 
-	return append([]byte{0x03}, padded_x...)
+	return append([]byte{0x03}, paddedX...)
 }
 
 // ToBytesUncompressed converts a Bitcoin public key to a 65-byte byte slice without point compression.
@@ -384,12 +419,22 @@ func (pub *PublicKey) ToBytesUncompressed() (b []byte) {
 	x := pub.X.Bytes()
 	y := pub.Y.Bytes()
 
+	var paddedX []byte
+	var paddedY []byte
 	/* Pad X and Y coordinate bytes to 32-bytes */
-	padded_x := append(bytes.Repeat([]byte{0x00}, 32-len(x)), x...)
-	padded_y := append(bytes.Repeat([]byte{0x00}, 32-len(y)), y...)
+	if NetworkType == "testnet" {
+
+		paddedX = append(bytes.Repeat([]byte{0x6F}, 32-len(x)), x...)
+		paddedY = append(bytes.Repeat([]byte{0x6F}, 32-len(y)), y...)
+
+	} else {
+
+		paddedX = append(bytes.Repeat([]byte{00}, 32-len(x)), x...)
+		paddedY = append(bytes.Repeat([]byte{0x00}, 32-len(y)), y...)
+	}
 
 	/* Add prefix 0x04 for uncompressed coordinates */
-	return append([]byte{0x04}, append(padded_x, padded_y...)...)
+	return append([]byte{0x04}, append(paddedX, paddedY...)...)
 }
 
 // FromBytes converts a byte slice (either with or without point compression) to a Bitcoin public key.
@@ -457,7 +502,12 @@ func (pub *PublicKey) ToAddress() (address string) {
 	pub_hash_2 := ripemd160_h.Sum(nil)
 
 	/* Convert hash bytes to base58 check encoded sequence */
-	address = b58checkencode(0x00, pub_hash_2)
+	if NetworkType == "testnet" {
+		address = b58checkencode(0x6F, pub_hash_2)
+
+	} else {
+		address = b58checkencode(0x00, pub_hash_2)
+	}
 
 	return address
 }
@@ -482,7 +532,12 @@ func (pub *PublicKey) ToAddressUncompressed() (address string) {
 	pub_hash_2 := ripemd160_h.Sum(nil)
 
 	/* Convert hash bytes to base58 check encoded sequence */
-	address = b58checkencode(0x00, pub_hash_2)
+	if NetworkType == "testnet" {
+		address = b58checkencode(0x6F, pub_hash_2)
+
+	} else {
+		address = b58checkencode(0x00, pub_hash_2)
+	}
 
 	return address
 }
